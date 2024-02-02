@@ -5,113 +5,50 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# Define your DQN model
-class DQN(nn.Module):
-    def __init__(self):
-        super(DQN, self).__init__()
-        self.fc1 = nn.Linear(in_features=6, out_features=128)
-        self.fc2 = nn.Linear(in_features=128, out_features=64)
-        self.fc3 = nn.Linear(in_features=64, out_features=2)  # 2 actions: jump or do nothing
-
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-# Initialization
+# Initialisierung von Pygame
 pygame.init()
 
-# Screen parameters
+# Bildschirmparameter
 WIDTH, HEIGHT = 800, 600
 FPS = 60
 
-# Colors
+# Farben
 WHITE = (255, 255, 255)
-SKY_COLOR = (135, 206, 250)  # Light Blue
 
-# Player parameters
+# Spielerparameter
 player_size = 50
-player_x, player_y = WIDTH // 4, HEIGHT - player_size * 2
+player_x = WIDTH // 4
+player_y = HEIGHT - player_size * 2
 player_speed = 8
-is_jumping, jump_count = False, 10
+is_jumping = False
+jump_count = 10
 
-# Ground parameters
+# Bodenparameter
 ground_height = 20
 
-# Holes in the ground
-min_hole_distance, hole_frequency, max_hole_size = 200, 20, 100
+# Löcher im Boden
+min_hole_distance = 200  # Mindestabstand zwischen Löchern
+hole_frequency = 20
+max_hole_size = 100
 holes = []
 
-# Score counter
+# Punktezähler
 score = 0
 
-# Game Over status
+# Game Over-Status
 game_over = False
 
-# Screen initialization
+# Initialisierung des Bildschirms
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Jump and Run Game")
+pygame.display.set_caption("Jump and Run Spiel")
 
-# Font for the score and game over message
+# Font für den Punktezähler und Game Over-Nachricht
 font = pygame.font.Font(None, 36)
 
-# Clock object for screen updates
+# Clock-Objekt für die Aktualisierung des Bildschirms
 clock = pygame.time.Clock()
 
-# DQN parameters
-state_size = 6  # Adjust as needed based on your state representation
-action_size = 2  # Jump or do nothing
-learning_rate = 0.001
-gamma = 0.99  # Discount factor
-epsilon = 1.0  # Exploration-exploitation trade-off
-epsilon_decay = 0.995
-epsilon_min = 0.01
-memory = []
-batch_size = 32  # Added batch size
-
-# Initialize DQN model and optimizer
-dqn_model = DQN()
-optimizer = optim.Adam(dqn_model.parameters(), lr=learning_rate)
-loss_function = nn.MSELoss()
-
-# Convert game state to a tensor
-def get_state():
-    # Player state
-    player_state = torch.tensor([player_x, player_y], dtype=torch.float32)
-
-    # Holes state
-    holes_state = torch.tensor([[hole.x, hole.y] for hole in holes], dtype=torch.float32)
-    
-    
-    # Pad smaller tensors to match the size of the largest one
-    max_size = max(len(player_state), holes_state.size(0))
-    if len(player_state) < max_size:
-        player_state = torch.cat([player_state, torch.zeros(max_size - len(player_state))])
-    if holes_state.size(0) < max_size:
-        zeros_to_add = max_size - holes_state.size(0)
-        holes_state = torch.cat([holes_state, torch.zeros(zeros_to_add, 2)])
-
-    # Concatenate player and holes states into the final state tensor
-    state = torch.cat([player_state, holes_state.view(-1)])
-
-    return state
-
-
-
-
-# Implement the DQN agent
-def dqn_agent(state):
-    global epsilon
-
-    # Epsilon-greedy policy
-    if random.uniform(0, 1) < epsilon:
-        return random.randint(0, action_size - 1)  # Explore
-    else:
-        with torch.no_grad():
-            q_values = dqn_model(state)
-            return torch.argmax(q_values).item()  # Exploit
-
+# Funktion zum Zeichnen des Strichmännchens
 def draw_player(x, y):
     # Kopf
     pygame.draw.circle(screen, WHITE, (x + player_size // 2, y), player_size // 4)
@@ -166,8 +103,10 @@ def generate_hole():
 # Farbe für den Himmel
 SKY_COLOR = (135, 206, 250)  # Lichtblau
 
-clouds= []
+# Liste für die Wolken
+clouds = []
 
+# Funktion zum Generieren einer Wolke
 def generate_cloud():
     cloud_x = WIDTH
     cloud_y = random.randint(50, 200)  # Y-Position der Wolke
@@ -183,10 +122,7 @@ def draw_clouds():
 def is_mouse_on_button(mouse_pos, button_rect):
     return button_rect.collidepoint(mouse_pos)
 
-# Initialize restart_rect and exit_rect outside of the game loop
-restart_rect, exit_rect = None, None
-
-# Main game loop
+# Hauptspiel-Schleife
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -206,113 +142,57 @@ while True:
                 sys.exit()
 
     keys = pygame.key.get_pressed()
-    if not is_jumping and not game_over and keys[pygame.K_SPACE]:
-        is_jumping = True
+    if not is_jumping and not game_over:
+        if keys[pygame.K_SPACE]:
+            is_jumping = True
 
     if is_jumping:
         if jump_count >= -10:
-            neg = 1 if jump_count >= 0 else -1
+            neg = 1
+            if jump_count < 0:
+                neg = -1
             player_y -= (jump_count ** 2) * 0.5 * neg
             jump_count -= 1
         else:
-            is_jumping, jump_count = False, 10
+            is_jumping = False
+            jump_count = 10
 
-    # Generate new clouds
-    if random.randint(0, 100) < 5:
+    # Generiere neue Wolken
+    if random.randint(0, 100) < 5:  # Geringe Wahrscheinlichkeit für jede Schleifeniteration
         clouds.append(generate_cloud())
 
-    # Move clouds to the left
-    clouds = [pygame.Rect(cloud.x - player_speed // 2, cloud.y, cloud.width, cloud.height) for cloud in clouds if cloud.x + cloud.width > 0]
+    # Bewege die Wolken nach links
+    for cloud in clouds:
+        cloud.x -= player_speed // 2  # Wolken bewegen sich langsamer als der Spieler
 
-    # Clear the screen
+    # Entferne Wolken, die den Bildschirm verlassen haben
+    clouds = [cloud for cloud in clouds if cloud.x + cloud.width > 0]
+
+    # Bildschirm leeren
     screen.fill(SKY_COLOR)
 
-    # Draw clouds
+    # Zeichne Wolken
     draw_clouds()
 
-    state = get_state()
-
     if not game_over:
-        # DQN agent makes a decision
-        action = dqn_agent(state)
+        # Bewegung der Löcher
+        for hole in holes:
+            hole.x -= player_speed
 
-        # Execute the action
-        if action == 0 and not is_jumping:
-            is_jumping = True
-
-        # Move holes
-        holes = [hole.move(-player_speed, 0) for hole in holes]
-
-        # Generate new holes
+        # Erzeugung neuer Löcher
         if random.randint(0, hole_frequency) == 0:
             generate_hole()
-            score += 1
+            score += 1  # Zähle den Punkt, wenn ein Loch generiert wird
 
-        # Collision with holes
-        game_over = any(hole.colliderect(pygame.Rect(player_x, player_y, player_size, player_size)) for hole in holes)
+        # Kollision mit Löchern
+        for hole in holes:
+            if hole.colliderect(pygame.Rect(player_x, player_y, player_size, player_size)):
+                game_over = True
 
-        # Remove old holes
+        # Löschen der alten Löcher
         holes = [hole for hole in holes if hole.x + hole.width > 0]
 
-        # Get the next state
-        next_state = get_state()
-
-        # Define reward
-        reward = 1 if not game_over else -1
-
-        # Store the experience in the replay memory
-        memory.append((state, action, reward, next_state, game_over))
-
-        # Update the DQN model
-        if len(memory) >= batch_size:
-           # Sample a random batch from the replay memory
-            batch = random.sample(memory, batch_size)
-
-            # Unpack the batch
-            states, actions, rewards, next_states, dones = zip(*batch)
-
-                        # Convert to PyTorch tensors
-            states = torch.stack([torch.flatten(state) for state in states])
-            next_states = torch.stack([torch.flatten(state) for state in next_states])
-
-            # Find the maximum size
-            max_size = max(states.size(1), next_states.size(1))
-
-            # Pad the tensors with zeros to match the size of the largest one
-            states = torch.cat([states, torch.zeros(states.size(0), max_size - states.size(1))], dim=1)
-            next_states = torch.cat([next_states, torch.zeros(next_states.size(0), max_size - next_states.size(1))], dim=1)
-
-
-            dones = torch.tensor(dones, dtype=torch.float32)
-            
-            # Compute Q-values for the current and next states
-            q_values = dqn_model(states)
-            next_q_values = dqn_model(next_states)
-            print("next_q_values shape:", next_q_values.shape)
-            print("dones shape:", dones.shape)
-            print("torch.max(...).values shape:", torch.max(next_q_values, dim=1).values.shape)
-
-            # Compute the target Q-values
-            rewards = torch.tensor(rewards, dtype=torch.float32)
-            dones = torch.tensor(dones, dtype=torch.float32)
-
-            target_q_values = rewards + gamma * (1 - dones) * torch.max(next_q_values, dim=1)[0]  # Removed unsqueeze(1)
-
-            # Get the Q-values for the selected actions
-            actions = torch.tensor(actions, dtype=torch.long)
-            selected_q_values = torch.gather(q_values, 1, actions.unsqueeze(1))
-
-            # Compute the loss
-            loss = loss_function(selected_q_values, target_q_values.unsqueeze(1))
-
-            # Update the model
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        state = next_state
-    
-    # Draw player, ground, holes, and score
+    # Zeichne Spieler, Boden, Löcher und den Punktezähler
     draw_player(player_x, player_y)
     draw_ground()
     draw_holes()
@@ -321,8 +201,8 @@ while True:
     if game_over:
         restart_rect, exit_rect = draw_game_over()
 
-    # Update the screen
+    # Aktualisiere den Bildschirm
     pygame.display.flip()
 
-    # Limit the update rate
+    # Begrenze die Aktualisierungsrate
     clock.tick(FPS)
