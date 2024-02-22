@@ -176,7 +176,7 @@ for epoch in range(num_epochs):
 
     if not game_over:
         # Aktion wählen
-        epsilon = max(0.01, 0.08 - score * 0.001)  # Epsilon verringern im Laufe der Zeit
+        epsilon = max(0.01, 0.08 - score * 0.1)  # Epsilon verringern im Laufe der Zeit
         state = normalize_state(player_y, player_size, holes)
         action = select_action(state, epsilon)
 
@@ -302,11 +302,4 @@ for epoch in range(num_epochs):
 # Nach dem Training das Modell speichern
 save_model(model, model_filepath)
 
-# Diagramm anzeigen
-plt.plot(score_plot)
-plt.xlabel('Epoch')
-plt.ylabel('Score')
-plt.title('Training Score Progress')
-plt.grid(True)
-plt.savefig('score_plot.png')  # Speichern Sie das Diagramm als Bilddatei
-plt.close()
+
