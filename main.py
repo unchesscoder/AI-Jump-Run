@@ -6,17 +6,19 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # Verwende Non-Interactive Backend für die Verwendung in nicht-GUI-Umgebungen
-from threading import Thread
+from collections import deque
 
-# Initialisierung von Pygame
+# Non-interactive backend for diagrams
+matplotlib.use('Agg')
+
+# Initialize Pygame
 pygame.init()
 
-# Bildschirmparameter
+# Screen parameters
 WIDTH, HEIGHT = 800, 600
 FPS = 60
 
-# Farben
+# Colors
 COLORS = {
     'WHITE': (255, 255, 255),
     'RED': (255, 0, 0),
@@ -24,282 +26,331 @@ COLORS = {
     'BLUE': (0, 0, 255),
 }
 
-# Spielerparameter
+# Player parameters
 player_size = 50
 player_speed = 8
-is_jumping = False
-jump_count = 10
-player_y = HEIGHT - player_size * 2  # Definiere player_y hier
-player_x = WIDTH // 4  # Definiere player_x hier
+player_y = HEIGHT - player_size * 2
+player_x = WIDTH // 4
 
-# Bodenparameter
+# Ground parameters
 ground_height = 20
 
-# Löcher im Boden
-min_hole_distance = 300  # Mindestabstand zwischen Löchern
-hole_frequency = 20
-max_hole_size = 100
-holes = []
+# Obstacles in the ground
+min_obstacle_distance = 300
+obstacle_frequency = 20
+max_obstacle_size = 100
+obstacles = []
 
-# Punktezähler
+# Score and game over status
 score = 0
 high_score = 0
-
-# Game Over-Status
 game_over = False
 
-# Trainingsdaten für die KI
-training_data = []
+# Replay buffer
+#replay_memory = deque(maxlen=1000)
+replay_memory = deque(maxlen=10000)
+batch_size = 64
+gamma = 0.99  # Discount factor
 
-# Neuronales Netzwerk für die Q-Learning-Steuerung
+# Reward parameters (constants for easy adjustment)
+BASE_REWARD = 0.05       # Base reward for survival
+OBSTACLE_CROSS_REWARD = 1.0  # Reward for crossing an obstacle
+HIGHSCORE_REWARD = 5.0   # Reward for beating the high score
+COLLISION_PENALTY = -2.0 # Penalty for collision
+JUMP_PENALTY = -0.01     # Penalty for excessive jumping
+
+# Neural network
 class QNetwork(nn.Module):
     def __init__(self):
         super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(5, 10)  # Eingabe: Spielerposition, Spielergröße, Lochpositionen
+        self.fc1 = nn.Linear(6, 24)  # 6 input values
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(10, 2)  # Ausgabe: Springen oder nicht springen
+        self.fc2 = nn.Linear(24, 24)
+        self.fc3 = nn.Linear(24, 2)  # 2 actions: jump or don't jump
 
     def forward(self, x):
         x = self.fc1(x)
         x = self.relu(x)
         x = self.fc2(x)
+        x = self.relu(x)
+        x = self.fc3(x)
         return x
 
-# Initialisierung des neuronalen Netzwerks, Optimierers und Verlustfunktion
+# Initialize model and optimizer
 model = QNetwork()
-optimizer = optim.Adam(model.parameters(), lr=0.01)  # Erhöhung der Lernrate auf 0.01
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 criterion = nn.MSELoss()
 
-# Initialisierung des Bildschirms
+# Pygame screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Jump and Run Spiel")
+pygame.display.set_caption("Jump and Run with AI")
 
-# Font für den Punktezähler und Game Over-Nachricht
+# Font
 font = pygame.font.Font(None, 36)
 
-# Clock-Objekt für die Aktualisierung des Bildschirms
+# Clock for FPS
 clock = pygame.time.Clock()
 
-# Funktion zur Normalisierung von Zustandsinformationen für das neuronale Netzwerk
-def normalize_state(player_y, player_size, holes):
-    normalized_state = [
-        player_y / HEIGHT,
-        player_size / player_size,
-        holes[0].x / WIDTH if holes else 0,
-        holes[0].y / HEIGHT if holes else 0,
-        holes[0].width / WIDTH if holes else 0,
-    ]
-    return torch.tensor(normalized_state, dtype=torch.float32).view(1, -1)
+# Function to normalize the state
+def normalize_state(player_y, player_size, obstacles):
+    if len(obstacles) == 0:
+        obstacle1_x, obstacle1_width, obstacle2_x, obstacle2_width = 0, 0, 0, 0
+    elif len(obstacles) == 1:
+        obstacle1_x = obstacles[0].x / WIDTH
+        obstacle1_width = obstacles[0].width / WIDTH
+        obstacle2_x, obstacle2_width = 0, 0
+    else:
+        obstacle1_x = obstacles[0].x / WIDTH
+        obstacle1_width = obstacles[0].width / WIDTH
+        obstacle2_x = obstacles[1].x / WIDTH
+        obstacle2_width = obstacles[1].width / WIDTH
 
-# Funktion zum Wählen einer Aktion basierend auf dem epsilon-greedy-Ansatz
+    return torch.tensor([player_y / HEIGHT, player_size / WIDTH, obstacle1_x, obstacle1_width, obstacle2_x, obstacle2_width], dtype=torch.float32).view(1, -1)
+
+# Epsilon-greedy action selection
 def select_action(state, epsilon):
     if random.random() < epsilon:
-        return random.randint(0, 1)  # Zufällige Aktion wählen
+        return random.randint(0, 1)
     else:
         with torch.no_grad():
             q_values = model(state)
-            return torch.argmax(q_values).item()  # Aktion mit höchstem Q-Wert wählen
+            return torch.argmax(q_values).item()
 
-# Funktion zum Neustarten des Spiels
+# Restart game
 def restart_game():
-    global player_y, holes, score, game_over
+    global player_y, obstacles, score, game_over, is_jumping
     player_y = HEIGHT - player_size * 2
-    holes = []
+    obstacles = []
     score = 0
     game_over = False
-    is_jumping = False  # Setze is_jumping zurück
+    is_jumping = False
 
-# Funktion zum Trainieren des Modells
+# Train the model
 def train_model():
-    global model, optimizer, criterion, holes
-    if len(training_data) > 0:
-        # Trainingsdaten in Tensor konvertieren
-        states, actions, rewards = zip(*training_data)
-        states = torch.cat(states)
-        actions = torch.tensor(actions)
-        rewards = torch.tensor(rewards, dtype=torch.float32)
+    if len(replay_memory) < batch_size:
+        return 0  # Return value for loss
 
-        # Modell trainieren
-        optimizer.zero_grad()
-        q_values = model(states)
-        predicted_q_values = torch.gather(q_values, 1, actions.unsqueeze(1))
-        target_q_values = rewards.unsqueeze(1)
-        loss = criterion(predicted_q_values, target_q_values)
-        loss.backward()
-        optimizer.step()
+    mini_batch = random.sample(replay_memory, batch_size)
+    states, actions, rewards, next_states, dones = zip(*mini_batch)
 
+    states = torch.cat(states)
+    actions = torch.tensor(actions).unsqueeze(1)
+    rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1)
+    next_states = torch.cat(next_states)
+    dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(1)
 
+    q_values = model(states).gather(1, actions)
+    next_q_values = model(next_states).max(1)[0].unsqueeze(1)
+    target_q_values = rewards + (gamma * next_q_values * (1 - dones))
 
-# Funktion für das Diagramm-Update
-def update_plot(score_plot, epoch):
-    if epoch % 100 == 0:  # Überprüfe, ob die aktuelle Epoche durch 100 teilbar ist
-        plt.plot(score_plot)
-        plt.xlabel('Epoch')
-        plt.ylabel('Score')
-        plt.title('Training Score Progress')
-        plt.grid(True)
-        plt.savefig('score_plot.png')  # Speichern Sie das Diagramm als Bilddatei
-        plt.close()
+    loss = criterion(q_values, target_q_values)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
-# Thread für das Diagramm-Update
-score_plot = []
-plot_thread = Thread(target=update_plot, args=(score_plot,))
-plot_thread.daemon = True
-plot_thread.start()
+    return loss.item()  # Return the loss value
 
-# Funktion zum Speichern des Modells
-def save_model(model, filepath):
-    torch.save(model.state_dict(), filepath)
+# Store game experience
+def store_experience(state, action, reward, next_state, done):
+    replay_memory.append((state, action, reward, next_state, done))
 
-# Funktion zum Laden des Modells
-def load_model(model, filepath):
-    model.load_state_dict(torch.load(filepath))
+# Check for collision
+def check_collision(player_rect, obstacles):
+    for obstacle in obstacles:
+        if player_rect.colliderect(obstacle):
+            return True
+    return False
 
-# Dateipfad zum Speichern und Laden des Modells
-model_filepath = "q_learning_model.pth"
+# Calculate reward
+def calculate_reward(player_rect, prev_obstacles, current_obstacles, score, high_score):
+    reward = BASE_REWARD  # Base reward for survival
 
-# Anzahl der Trainingsepochen
+    # Check if the obstacle was crossed
+    for prev_obstacle in prev_obstacles:
+        if prev_obstacle not in current_obstacles:
+            reward += OBSTACLE_CROSS_REWARD  # Reward for crossing an obstacle
+
+    # Reward for beating the high score
+    if score > high_score:
+        reward += HIGHSCORE_REWARD  # Reward for beating the high score
+
+    return reward
+
+# Update diagrams
+def save_plots():
+    plt.figure(figsize=(15, 10))  # Adjust figure size
+    plt.subplot(2, 2, 1)
+    plt.plot(total_rewards)
+    plt.title("Total Rewards")
+    plt.xlabel("Episodes")
+    plt.ylabel("Reward")
+
+    plt.subplot(2, 2, 2)
+    plt.plot(avg_q_values)
+    plt.title("Average Q-Value")
+    plt.xlabel("Episodes")
+    plt.ylabel("Average Q-Value")
+
+    plt.subplot(2, 2, 3)
+    plt.plot(losses)
+    plt.title("Loss")
+    plt.xlabel("Episodes")
+    plt.ylabel("Loss")
+
+    plt.subplot(2, 2, 4)
+    plt.plot(total_scores)
+    plt.title("Score Progression")
+    plt.xlabel("Episodes")
+    plt.ylabel("Score")
+
+    plt.tight_layout()
+    plt.savefig('training_progress.png')
+    print("Diagrams saved as 'training_progress.png'.")
+
+# Main game loop
 num_epochs = 200000
+is_jumping = False
+jump_height = 100  # Fixed jump height
+jump_velocity = -15  # Initial velocity for the jump
+gravity = 1.0  # Gravity constant
 
-# Hauptspiel-Schleife
+# Variables for learning progress
+total_rewards = []
+avg_q_values = []
+losses = []
+total_scores = []  # Add score progression
+epsilon = 1.0  # Starting value for epsilon
+successful_episodes = 0  # Successful episodes
+
 for epoch in range(num_epochs):
-    print("Epoch:", epoch)
+    try:
+        # Debug output
+        if epoch % 100 == 0:
+            print(f"Epoch: {epoch}")
 
-    total_loss = 0  # Initialisieren Sie den Gesamtverlust für diese Epoche
-    total_points = 0  # Initialisieren Sie die gesammelten Punkte für diese Epoche
-    current_reward = 0  # Initialisieren Sie die aktuelle Belohnung für diese Epoche
+        total_loss = train_model()  # Calculate loss
+        losses.append(total_loss)   # Store loss
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+        prev_obstacles = list(obstacles)  # Store previous obstacles
 
-    if not game_over:
-        # Aktion wählen
-        epsilon = max(0.01, 0.08 - score * 0.1)  # Epsilon verringern im Laufe der Zeit
-        state = normalize_state(player_y, player_size, holes)
-        action = select_action(state, epsilon)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
 
-        # Aktion ausführen und Spielzustand aktualisieren
-        if action == 1 and not is_jumping:
-            is_jumping = True
+        if not game_over:
+            state = normalize_state(player_y, player_size, obstacles)
+            action = select_action(state, epsilon)
 
-    # Spiellogik aktualisieren
-    if is_jumping:
-        if jump_count >= -10:
-            neg = 1
-            if jump_count < 0:
-                neg = -1
-            player_y -= (jump_count ** 2) * 0.5 * neg
-            jump_count -= 1
+            # Average Q-value for the current state-action pair
+            with torch.no_grad():
+                q_values = model(state)
+                avg_q_value = q_values.mean().item()
+
+            avg_q_values.append(avg_q_value)
+
+            if action == 1 and not is_jumping:
+                is_jumping = True
+
+        # Jumping logic
+        if is_jumping:
+            player_y += jump_velocity
+            jump_velocity += gravity
+
+            if player_y >= HEIGHT - ground_height - player_size:
+                player_y = HEIGHT - ground_height - player_size
+                is_jumping = False
+                jump_velocity = -15
         else:
-            is_jumping = False
-            jump_count = 10
-    else:
-        # Spieler auf dem Boden halten
-        player_y = HEIGHT - ground_height - player_size
+            player_y = HEIGHT - ground_height - player_size
 
-    # Generiere neue Löcher
-    if random.randint(0, hole_frequency) == 0:
-        if not holes or WIDTH - holes[-1].x >= min_hole_distance:
-            hole_x = WIDTH
-            hole_width = random.randint(20, max_hole_size)
-            hole_height = random.randint(20, max_hole_size)
-            hole_y = HEIGHT - ground_height - hole_height
-            holes.append(pygame.Rect(hole_x, hole_y, hole_width, hole_height))
-            if not game_over:  # Zähle die Punktzahl, wenn das Spiel noch nicht vorbei ist
-                score += 1
-                if score > high_score:
-                    high_score = score
-                    current_reward = 1  # Belohnung für Verbesserung des Highscores
-                else:
-                    current_reward = 0  # Keine Belohnung, wenn der Highscore nicht verbessert wird
 
-    # Bewege die Löcher nach links
-    for hole in holes:
-        hole.x -= player_speed
+        # Generate obstacles
+        if random.randint(0, obstacle_frequency) == 0:
+            if not obstacles or WIDTH - obstacles[-1].x >= min_obstacle_distance:
+                obstacle_x = WIDTH
+                
+                # Hindernisbreite basiert jetzt auf 50 % der Sprunghöhe
+                obstacle_width = random.randint(20, int(jump_height * 0.5))
+                
+                # Hindernishöhe basiert jetzt auf 80 % der Sprunghöhe
+                obstacle_height = random.randint(20, int(jump_height * 0.8))
+                
+                obstacle_y = HEIGHT - ground_height - obstacle_height
+                obstacles.append(pygame.Rect(obstacle_x, obstacle_y, obstacle_width, obstacle_height))
 
-    # Kollision mit Löchern
-    for hole in holes:
-        if hole.colliderect(pygame.Rect(player_x, player_y, player_size, player_size)):
+
+
+        # if random.randint(0, obstacle_frequency) == 0:
+        #     if not obstacles or WIDTH - obstacles[-1].x >= min_obstacle_distance:
+        #         obstacle_x = WIDTH
+        #         obstacle_width = random.randint(20, max_obstacle_size)
+        #         obstacle_height = random.randint(20, max_obstacle_size)
+        #         obstacle_y = HEIGHT - ground_height - obstacle_height
+        #         obstacles.append(pygame.Rect(obstacle_x, obstacle_y, obstacle_width, obstacle_height))
+
+        # Move obstacles
+        for obstacle in obstacles:
+            obstacle.x -= player_speed
+
+        # Collision detection
+        player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
+        next_state = normalize_state(player_y, player_size, obstacles)
+        reward = calculate_reward(player_rect, prev_obstacles, obstacles, score, high_score)
+
+        if check_collision(player_rect, obstacles):
             game_over = True
-            if not game_over:
-                current_reward = -1  # Strafe für Kollision
-                training_data.append((state, action, current_reward))  # Füge Trainingsdaten hinzu, wenn Spiel noch läuft
-            break  # Die Schleife beenden, wenn eine Kollision erkannt wurde
+            reward += COLLISION_PENALTY
 
-    # Entferne Löcher, die den Bildschirm verlassen haben
-    holes = [hole for hole in holes if hole.x + hole.width > 0]
+        if is_jumping:
+            reward += JUMP_PENALTY
 
-    # Modell trainieren
-    train_model()
+        if not game_over:
+            score += 1
+            total_rewards.append(reward)
+            total_scores.append(score)
+            store_experience(state, action, reward, next_state, game_over)
+        else:
+            successful_episodes += 1
+            if score > high_score:
+                high_score = score
+            reward += HIGHSCORE_REWARD
+            replay_memory.append((state, action, reward, next_state, game_over))
 
-    # Berechnen Sie den Verlust und fügen Sie ihn dem Gesamtverlust hinzu
-    if len(training_data) > 0:
-        states, actions, rewards = zip(*training_data)
-        states = torch.cat(states)
-        actions = torch.tensor(actions)
-        rewards = torch.tensor(rewards, dtype=torch.float32)
+        obstacles = [obstacle for obstacle in obstacles if obstacle.x + obstacle.width > 0]
 
-        q_values = model(states)
-        predicted_q_values = torch.gather(q_values, 1, actions.unsqueeze(1))
-        target_q_values = rewards.unsqueeze(1)
-        loss = criterion(predicted_q_values, target_q_values)
-        total_loss += loss.item()  # Fügen Sie den aktuellen Verlust hinzu
+        loss = train_model()
+        losses.append(loss)
 
-    # Ausgabe von Gesamtverlust und durchschnittlicher Belohnung
-    average_reward = total_points / (epoch + 1)  # Berechnen Sie die durchschnittliche Belohnung pro Epoche
-    print("Total Loss (Epoch {}): {:.4f}".format(epoch, total_loss))
-    print("Average Reward (Epoch {}): {:.4f}".format(epoch, average_reward))
+        screen.fill((0, 0, 0))
+        pygame.draw.rect(screen, COLORS['WHITE'], [player_x, player_y, player_size, player_size])
+        pygame.draw.rect(screen, COLORS['WHITE'], [0, HEIGHT - ground_height, WIDTH, ground_height])
 
-    # Aktualisiere das Diagramm
-    score_plot.append(score)
+        for obstacle in obstacles:
+            pygame.draw.rect(screen, COLORS['RED'], obstacle)
 
-    # Bildschirm leeren
-    screen.fill((0, 0, 0))
+        score_text = font.render(f"Score: {score}", True, COLORS['WHITE'])
+        screen.blit(score_text, (10, 10))
+        avg_q_text = font.render(f"Avg Q-Value: {avg_q_value:.2f}", True, COLORS['WHITE'])
+        screen.blit(avg_q_text, (10, 50))
 
-    # Zeichne Spieler, Boden, Löcher und den Punktezähler
-    pygame.draw.rect(screen, COLORS['WHITE'], [player_x, player_y, player_size, player_size])
-    pygame.draw.rect(screen, COLORS['WHITE'], [0, HEIGHT - ground_height, WIDTH, ground_height])
-    for hole in holes:
-        pygame.draw.rect(screen, COLORS['RED'], hole)
-    score_text = font.render("Punkte: {}".format(score), True, COLORS['WHITE'])
-    screen.blit(score_text, (10, 10))
+        if game_over:
+            game_over_text = font.render(f"Game Over! Score: {score}", True, COLORS['WHITE'])
+            screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 3))
+            pygame.display.flip()
+            pygame.time.wait(1000)
+            restart_game()
 
-    # Überprüfe den Game Over-Status und zeige den entsprechenden Bildschirm an
-    if game_over:
-        game_over_text = font.render("Game Over! Punkte: {}".format(score), True, COLORS['WHITE'])
-        screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 3))
-        restart_text = font.render("Restart", True, COLORS['GREEN'])
-        exit_text = font.render("Exit", True, COLORS['RED'])
-        restart_rect = pygame.Rect(WIDTH // 3, 2 * HEIGHT // 3, restart_text.get_width(), restart_text.get_height())
-        exit_rect = pygame.Rect(2 * WIDTH // 3 - exit_text.get_width(), 2 * HEIGHT // 3, exit_text.get_width(), exit_text.get_height())
-        pygame.draw.rect(screen, COLORS['GREEN'], restart_rect)
-        pygame.draw.rect(screen, COLORS['RED'], exit_rect)
-        screen.blit(restart_text, (WIDTH // 3, 2 * HEIGHT // 3))
-        screen.blit(exit_text, (2 * WIDTH // 3 - exit_text.get_width(), 2 * HEIGHT // 3))
-        restart_game()  # Neustart des Spiels
-    else:
-        # Aktualisiere den Bildschirm
         pygame.display.flip()
+        clock.tick(FPS)
 
-    # Begrenze die Aktualisierungsrate
-    clock.tick_busy_loop(FPS)
+        #epsilon = max(0.01, epsilon * 0.995)
+        epsilon = max(0.01, epsilon * 0.9995)
 
-    # Nach jeder Epoche speichern wir das Modell
-    if epoch % 100 == 0:
-        save_model(model, model_filepath)
-        # Diagramm anzeigen
-        plt.plot(score_plot)
-        plt.xlabel('Epoch')
-        plt.ylabel('Score')
-        plt.title('Training Score Progress')
-        plt.grid(True)
-        plt.savefig('score_plot.png')  # Speichern Sie das Diagramm als Bilddatei
-        plt.close()
+        if epoch % 1000 == 0:
+            save_plots()
 
+    except Exception as e:
+        print(f"Error in epoch {epoch}: {e}")
 
-# Nach dem Training das Modell speichern
-save_model(model, model_filepath)
-
-
+pygame.quit()
