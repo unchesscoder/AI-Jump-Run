@@ -4,10 +4,11 @@ This project implements a simple "Jump and Run" game using Pygame, where an arti
 
 
 1. Introduction
+
 The "Jump and Run with AI" project demonstrates the application of reinforcement learning (RL) techniques in a gaming environment. The goal is to train an AI agent to control a player character that must jump to avoid obstacles and earn rewards. The project uses the Pygame library for game development and PyTorch for implementing the DQN model.
 
 
-2. Game Description
+3. Game Description
 The game features:
 
 A player character that can either jump or stay on the ground.
