@@ -1,67 +1,54 @@
-Jump and Run with AI: A Reinforcement Learning Approach
-Abstract
-This project implements a simple "Jump and Run" game using Pygame, where an artificial intelligence (AI) agent learns to navigate obstacles through reinforcement learning. The AI is trained using a Deep Q-Network (DQN) to maximize its score by avoiding obstacles and surviving as long as possible. The game and learning process are visualized using matplotlib for analysis and evaluation.
+# Jump and Run with AI
 
+## 1. Introduction
 
-1. Introduction
+This project is a simple game built with Pygame and PyTorch, where an AI-controlled character navigates through obstacles by jumping. The objective is to maximize the score by avoiding collisions and surviving as long as possible.
 
-The "Jump and Run with AI" project demonstrates the application of reinforcement learning (RL) techniques in a gaming environment. The goal is to train an AI agent to control a player character that must jump to avoid obstacles and earn rewards. The project uses the Pygame library for game development and PyTorch for implementing the DQN model.
+## 2. Game Description
 
+- **Player Character**: Can jump or stay grounded.
+- **Obstacles**: Move from right to left. Their width is up to 50% of the jump height, and their height is up to 80% of the jump height.
+- **Scoring**: Points are earned for surviving, crossing obstacles, and achieving high scores.
 
-2. Game Description
-The game features:
+## 3. Technical Details
 
-A player character that can either jump or stay on the ground.
-Obstacles that appear from the right side of the screen and move leftward.
-A jumping mechanic that allows the player to avoid obstacles.
-A scoring system that rewards the player for surviving and crossing obstacles.
+### Game Mechanics
 
-2.1 Game Mechanics
-Player Movement: The player can jump to avoid obstacles. Horizontal movement is not controlled by the player.
-Obstacles: Obstacles are generated with a width and height proportional to the jump height to ensure they are manageable.
-Score: The score increases with time and rewards are given for crossing obstacles and achieving high scores.
+- **Player Movement**: Controlled by jumping or not.
+- **Obstacle Generation**: Obstacles appear based on a frequency and are sized relative to the jump height.
+- **Collision Detection**: Checks if the player hits an obstacle.
+- **Rewards and Penalties**: 
+  - Base reward for survival.
+  - Bonus for crossing obstacles.
+  - Penalty for collisions and excessive jumping.
+  - Reward for beating the high score.
 
+### AI Model
 
-3. Reinforcement Learning Approach
-The AI agent is trained using a Deep Q-Network (DQN) which learns to make decisions based on state-action values.
+- **Neural Network**: Uses a simple feedforward network to decide actions (jump or stay).
+- **Training**: Utilizes experience replay and Q-learning to improve the model's performance.
 
-3.1 DQN Architecture
-Network Structure: The Q-network consists of three fully connected layers with ReLU activations. The input consists of normalized game state features, and the output provides Q-values for the two possible actions: jump or do nothing.
-Training: The model is trained using experience replay, where past experiences are stored and sampled to train the network. The loss is calculated using mean squared error between predicted and target Q-values.
+## 4. Code Overview
 
-3.2 Rewards and Penalties
-Base Reward: A small reward is given for survival.
-Obstacle Cross Reward: A reward is given when an obstacle is crossed.
-High Score Reward: Additional reward for setting a new high score.
-Collision Penalty: Penalty for colliding with an obstacle.
-Jump Penalty: Small penalty for jumping, encouraging the agent to jump only when necessary.
+The main components include:
+- **Game Loop**: Handles player actions, obstacle movement, and collision detection.
+- **Model Training**: Updates the neural network based on game experiences.
+- **Visualization**: Saves plots of training progress, including rewards, Q-values, loss, and scores.
 
+## 5. Dependencies
 
-4. Implementation
-   
-4.1 Setup
-Libraries Used: Pygame for game development, PyTorch for machine learning, and matplotlib for plotting training results.
-Game Parameters: The game window is 800x600 pixels, and the player’s jump height is fixed at 100 pixels.
+- **Pygame**: For game development.
+- **PyTorch**: For the AI model.
+- **Matplotlib**: For visualizing training progress.
 
-4.2 Code Details
-Normalization: Game states are normalized to ensure the model's input is consistent.
-Obstacle Generation: Obstacles are generated with dimensions based on a fraction of the jump height to maintain balance.
-Training Loop: The model is trained over 200,000 epochs with experience replay, and rewards are computed based on the game state and actions taken.
+## 6. Running the Game
 
-5. Results
-The performance of the AI agent is evaluated through:
+1. Clone the repository.
+2. Install the dependencies using `pip install pygame torch matplotlib`.
+3. Run the main script to start the game and train the AI.
 
-Training Progress: Metrics such as total rewards, average Q-values, and loss are plotted.
-Game Performance: The agent's ability to avoid obstacles and maximize the score is analyzed.
+## 7. Future Work
 
-
-6. Conclusion
-The "Jump and Run with AI" project successfully demonstrates the application of reinforcement learning in a gaming context. The DQN model learns to navigate obstacles effectively, and the visualization tools provide insights into the training process.
-
-
-7. Future Work
-Future improvements could include:
-
-Enhancing the Neural Network: Exploring more advanced architectures for better performance.
-Fine-Tuning Reward Mechanisms: Adjusting rewards and penalties to improve learning efficiency.
-Expanding the Game: Adding more features and complexities to increase the challenge for the AI.
+- **Enhanced AI**: Experiment with more complex neural networks.
+- **Additional Features**: Include different types of obstacles or power-ups.
+- **Optimization**: Improve game performance and model efficiency.
