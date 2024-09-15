@@ -57,6 +57,7 @@ The "Jump and Run with AI" project successfully demonstrates the application of 
 
 6. Future Work
 Future improvements could include:
+
 Enhancing the Neural Network: Exploring more advanced architectures for better performance.
 Fine-Tuning Reward Mechanisms: Adjusting rewards and penalties to improve learning efficiency.
 Expanding the Game: Adding more features and complexities to increase the challenge for the AI.
