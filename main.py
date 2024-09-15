@@ -269,25 +269,15 @@ for epoch in range(num_epochs):
         if random.randint(0, obstacle_frequency) == 0:
             if not obstacles or WIDTH - obstacles[-1].x >= min_obstacle_distance:
                 obstacle_x = WIDTH
-                
-                # Hindernisbreite basiert jetzt auf 50 % der Sprunghöhe
+
+                # Obstacle width now based on up to 50% of jump height
                 obstacle_width = random.randint(20, int(jump_height * 0.5))
                 
-                # Hindernishöhe basiert jetzt auf 80 % der Sprunghöhe
+                # Obstacle height now based on up to 80% of jump height
                 obstacle_height = random.randint(20, int(jump_height * 0.8))
                 
                 obstacle_y = HEIGHT - ground_height - obstacle_height
                 obstacles.append(pygame.Rect(obstacle_x, obstacle_y, obstacle_width, obstacle_height))
-
-
-
-        # if random.randint(0, obstacle_frequency) == 0:
-        #     if not obstacles or WIDTH - obstacles[-1].x >= min_obstacle_distance:
-        #         obstacle_x = WIDTH
-        #         obstacle_width = random.randint(20, max_obstacle_size)
-        #         obstacle_height = random.randint(20, max_obstacle_size)
-        #         obstacle_y = HEIGHT - ground_height - obstacle_height
-        #         obstacles.append(pygame.Rect(obstacle_x, obstacle_y, obstacle_width, obstacle_height))
 
         # Move obstacles
         for obstacle in obstacles:
