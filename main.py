@@ -47,17 +47,16 @@ high_score = 0
 game_over = False
 
 # Replay buffer
-#replay_memory = deque(maxlen=1000)
 replay_memory = deque(maxlen=10000)
 batch_size = 64
-gamma = 0.99  # Discount factor
+gamma = 0.98  # Discount factor
 
 # Reward parameters (constants for easy adjustment)
-BASE_REWARD = 0.05       # Base reward for survival
-OBSTACLE_CROSS_REWARD = 1.0  # Reward for crossing an obstacle
-HIGHSCORE_REWARD = 5.0   # Reward for beating the high score
-COLLISION_PENALTY = -2.0 # Penalty for collision
-JUMP_PENALTY = -0.01     # Penalty for excessive jumping
+BASE_REWARD = 0.1       # Base reward for survival
+OBSTACLE_CROSS_REWARD = 10.0  # Reward for crossing an obstacle
+HIGHSCORE_REWARD = 50.0    # Reward for beating the high score
+COLLISION_PENALTY = -50.0  # Penalty for collision
+JUMP_PENALTY = -5.0        # Penalty for excessive jumping
 
 # Neural network
 class QNetwork(nn.Module):
@@ -78,7 +77,7 @@ class QNetwork(nn.Module):
 
 # Initialize model and optimizer
 model = QNetwork()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.MSELoss()
 
 # Pygame screen
@@ -118,12 +117,13 @@ def select_action(state, epsilon):
 
 # Restart game
 def restart_game():
-    global player_y, obstacles, score, game_over, is_jumping
+    global player_y, obstacles, score, game_over, is_jumping, steps
     player_y = HEIGHT - player_size * 2
     obstacles = []
     score = 0
     game_over = False
     is_jumping = False
+    steps = 0  # Zurücksetzen der Schritte am Anfang jeder Episode
 
 # Train the model
 def train_model():
@@ -161,18 +161,33 @@ def check_collision(player_rect, obstacles):
             return True
     return False
 
-# Calculate reward
-def calculate_reward(player_rect, prev_obstacles, current_obstacles, score, high_score):
-    reward = BASE_REWARD  # Base reward for survival
+# Check for the distance to the next obstacle
+def distance_to_next_obstacle(player_x, obstacles):
+    if len(obstacles) > 0:
+        # Calculate the distance from the player to the first obstacle
+        next_obstacle = obstacles[0]
+        return next_obstacle.x - player_x
+    return float('inf')  # If no obstacle, return a large value   
 
-    # Check if the obstacle was crossed
+# Calculate reward including context-aware jump penalty
+def calculate_reward(player_rect, prev_obstacles, current_obstacles, score, high_score, steps, action, distance_to_obstacle):
+    reward = 0  # Start with 0 reward
+
+    # Base reward for survival, scaled by steps
+    reward += BASE_REWARD * steps
+
+    # Reward for crossing an obstacle
     for prev_obstacle in prev_obstacles:
         if prev_obstacle not in current_obstacles:
-            reward += OBSTACLE_CROSS_REWARD  # Reward for crossing an obstacle
+            reward += OBSTACLE_CROSS_REWARD
 
-    # Reward for beating the high score
+    # High score reward
     if score > high_score:
-        reward += HIGHSCORE_REWARD  # Reward for beating the high score
+        reward += HIGHSCORE_REWARD
+
+    # Context-aware jump penalty: Only apply if the player jumps with no obstacle nearby
+    if action == 1 and distance_to_obstacle > player_size * 2:  # Jump penalty if no nearby obstacle
+        reward += JUMP_PENALTY
 
     return reward
 
@@ -208,7 +223,7 @@ def save_plots():
     print("Diagrams saved as 'training_progress.png'.")
 
 # Main game loop
-num_epochs = 200000
+num_epochs = 2000000
 is_jumping = False
 jump_height = 100  # Fixed jump height
 jump_velocity = -15  # Initial velocity for the jump
@@ -220,7 +235,10 @@ avg_q_values = []
 losses = []
 total_scores = []  # Add score progression
 epsilon = 1.0  # Starting value for epsilon
+epsilon_decay = 0.9998  # Epsilon decay rate
+min_epsilon = 0.01  # Minimum epsilon value
 successful_episodes = 0  # Successful episodes
+steps = 0  # Number of steps survived
 
 for epoch in range(num_epochs):
     try:
@@ -239,7 +257,13 @@ for epoch in range(num_epochs):
                 sys.exit()
 
         if not game_over:
+            steps += 1  # Increase steps
             state = normalize_state(player_y, player_size, obstacles)
+
+            # Calculate distance to the next obstacle
+            distance_to_obstacle = distance_to_next_obstacle(player_x, obstacles)
+
+            # Select action
             action = select_action(state, epsilon)
 
             # Average Q-value for the current state-action pair
@@ -264,18 +288,14 @@ for epoch in range(num_epochs):
         else:
             player_y = HEIGHT - ground_height - player_size
 
-
         # Generate obstacles
         if random.randint(0, obstacle_frequency) == 0:
             if not obstacles or WIDTH - obstacles[-1].x >= min_obstacle_distance:
                 obstacle_x = WIDTH
 
-                # Obstacle width now based on up to 50% of jump height
+                # Obstacle width and height
                 obstacle_width = random.randint(20, int(jump_height * 0.5))
-                
-                # Obstacle height now based on up to 80% of jump height
                 obstacle_height = random.randint(20, int(jump_height * 0.8))
-                
                 obstacle_y = HEIGHT - ground_height - obstacle_height
                 obstacles.append(pygame.Rect(obstacle_x, obstacle_y, obstacle_width, obstacle_height))
 
@@ -286,7 +306,12 @@ for epoch in range(num_epochs):
         # Collision detection
         player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
         next_state = normalize_state(player_y, player_size, obstacles)
-        reward = calculate_reward(player_rect, prev_obstacles, obstacles, score, high_score)
+        
+        # Calculate distance to the next obstacle
+        distance_to_obstacle = distance_to_next_obstacle(player_x, obstacles)
+        
+        # Calculate reward
+        reward = calculate_reward(player_rect, prev_obstacles, obstacles, score, high_score, steps, action, distance_to_obstacle)
 
         if check_collision(player_rect, obstacles):
             game_over = True
@@ -305,7 +330,7 @@ for epoch in range(num_epochs):
             if score > high_score:
                 high_score = score
             reward += HIGHSCORE_REWARD
-            replay_memory.append((state, action, reward, next_state, game_over))
+            store_experience(state, action, reward, next_state, game_over)
 
         obstacles = [obstacle for obstacle in obstacles if obstacle.x + obstacle.width > 0]
 
@@ -328,19 +353,19 @@ for epoch in range(num_epochs):
             game_over_text = font.render(f"Game Over! Score: {score}", True, COLORS['WHITE'])
             screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 3))
             pygame.display.flip()
-            pygame.time.wait(1000)
+            pygame.time.wait(1)
             restart_game()
 
         pygame.display.flip()
         clock.tick(FPS)
 
-        #epsilon = max(0.01, epsilon * 0.995)
-        epsilon = max(0.01, epsilon * 0.9995)
+        epsilon = max(min_epsilon, epsilon * epsilon_decay)
 
         if epoch % 1000 == 0:
             save_plots()
 
     except Exception as e:
-        print(f"Error in epoch {epoch}: {e}")
+        print(f"Error during epoch {epoch}: {e}")
+        break
 
 pygame.quit()
