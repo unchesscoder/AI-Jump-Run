@@ -123,7 +123,7 @@ def restart_game():
     score = 0
     game_over = False
     is_jumping = False
-    steps = 0  # Zurücksetzen der Schritte am Anfang jeder Episode
+    steps = 0  # Resetting the steps at the beginning of each episode
 
 # Train the model
 def train_model():
