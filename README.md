@@ -1,7 +1,8 @@
 # Jump and Run with AI
 
 
-![AI jump and run](https://github.com/user-attachments/assets/05935b6f-a2b0-4f04-bc1a-b708acffed2a)
+![AI jump and run (2)](https://github.com/user-attachments/assets/4ae53268-ce33-4434-bba8-ef2a1aed1b6d)
+
 
 
 ## 1. Introduction
