@@ -6,8 +6,8 @@ This project is a simple game built with Pygame and PyTorch, where an AI-control
 
 ## 2. Game Description
 
-- **Player Character**: Can jump or stay grounded.
-- **Obstacles**: Move from right to left. Their width is up to 50% of the jump height, and their height is up to 80% of the jump height.
+- **Player Character**:(GREEN MODEL) Can jump or stay grounded.
+- **Obstacles**:(RED MODEL) Move from right to left. Their width is up to 50% of the jump height, and their height is up to 80% of the jump height.
 - **Scoring**: Points are earned for surviving, crossing obstacles, and achieving high scores.
 
 
