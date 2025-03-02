@@ -1,5 +1,9 @@
 # Jump and Run with AI
 
+
+![AI jump and run](https://github.com/user-attachments/assets/05935b6f-a2b0-4f04-bc1a-b708acffed2a)
+
+
 ## 1. Introduction
 
 This project is a simple game built with Pygame and PyTorch, where an AI-controlled character navigates through obstacles by jumping. The objective is to maximize the score by avoiding collisions and surviving as long as possible.
@@ -9,11 +13,6 @@ This project is a simple game built with Pygame and PyTorch, where an AI-control
 - **Player Character**:(GREEN MODEL) Can jump or stay grounded.
 - **Obstacles**:(RED MODEL) Move from right to left. Their width is up to 50% of the jump height, and their height is up to 80% of the jump height.
 - **Scoring**: Points are earned for surviving, crossing obstacles, and achieving high scores.
-
-
-![image](https://github.com/user-attachments/assets/81c83732-6c2a-45a2-843e-6a4e0ecf9440)
-
-
 
 ## 3. Technical Details
 
